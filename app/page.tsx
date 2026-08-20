@@ -32,9 +32,27 @@ export default function Home() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
 
-  // 1. AMBIL DATA DARI SUPABASE
+  const [calcAccountType, setCalcAccountType] = useState('USD');
+  
+  // --- STATE UNTUK FITUR MATA UANG ---
+  const [idrRate, setIdrRate] = useState(15500); // Default jika API gagal
+  const [showInIDR, setShowInIDR] = useState(false);
+  const [currencyModalOpen, setCurrencyModalOpen] = useState(false);
+  const [calcInput, setCalcInput] = useState<number | ''>('');
+
+  // 1. AMBIL DATA DARI SUPABASE & API KURS
   useEffect(() => {
     fetchTrades();
+    
+    // Tarik data Kurs USD ke IDR secara Real-time
+    fetch('https://open.er-api.com/v6/latest/USD')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.rates && data.rates.IDR) {
+          setIdrRate(data.rates.IDR);
+        }
+      })
+      .catch(err => console.error('Gagal mengambil kurs API:', err));
   }, []);
 
   const fetchTrades = async () => {
@@ -180,6 +198,20 @@ export default function Home() {
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentTrades = filteredTrades.slice(indexOfFirstItem, indexOfLastItem);
 
+  // Helper Format Uang (Bisa USD atau IDR otomatis)
+  const formatMoney = (usdValue: number, withSign = false) => {
+    const isNegative = usdValue < 0;
+    const val = Math.abs(usdValue);
+    
+    const formatted = showInIDR 
+      ? `Rp ${(val * idrRate).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`
+      : `$${val.toFixed(2)}`;
+
+    if (isNegative) return `-${formatted}`;
+    if (withSign && usdValue > 0) return `+${formatted}`;
+    return formatted;
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 font-sans selection:bg-emerald-500 selection:text-slate-950 relative overflow-hidden">
       
@@ -205,13 +237,24 @@ export default function Home() {
             <p className="text-xs text-slate-400 mt-1">Sinkronisasi otomatis database dan konversi akun USC (1:100) ke USD.</p>
           </div>
           
-          <div className="flex items-center gap-3 bg-slate-900/80 backdrop-blur-md border border-slate-800 px-5 py-3 rounded-2xl shadow-xl transition-transform duration-300 hover:scale-[1.02]">
-            <div className={`w-3 h-3 rounded-full ${totalPLUSD >= 0 ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 'bg-rose-500 shadow-lg shadow-rose-500/50'} animate-ping`}></div>
-            <div className="text-left">
-              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Net P&L (USD Standard)</span>
-              <span className={`text-lg font-extrabold font-mono transition-colors duration-300 ${totalPLUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {totalPLUSD >= 0 ? `+$${totalPLUSD.toFixed(2)}` : `-$${Math.abs(totalPLUSD).toFixed(2)}`}
-              </span>
+          <div className="flex items-center gap-3">
+            {/* TOMBOL BUKA KALKULATOR KURS */}
+            <button 
+              onClick={() => setCurrencyModalOpen(true)}
+              className="bg-slate-900 border border-slate-700 hover:border-emerald-500 hover:text-emerald-400 p-2.5 rounded-xl transition-all cursor-pointer text-slate-400 shadow-lg"
+              title="Kalkulator Kurs & Mata Uang"
+            >
+              <Scale className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 bg-slate-900/80 backdrop-blur-md border border-slate-800 px-5 py-3 rounded-2xl shadow-xl transition-transform duration-300 hover:scale-[1.02]">
+              <div className={`w-3 h-3 rounded-full ${totalPLUSD >= 0 ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 'bg-rose-500 shadow-lg shadow-rose-500/50'} animate-ping`}></div>
+              <div className="text-left">
+                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Net P&L ({showInIDR ? 'IDR' : 'USD'})</span>
+                <span className={`text-lg font-extrabold font-mono transition-colors duration-300 ${totalPLUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {formatMoney(totalPLUSD, true)}
+                </span>
+              </div>
             </div>
           </div>
         </header>
@@ -219,11 +262,13 @@ export default function Home() {
         {/* KARTU STATISTIK (DENGAN EQUITY DI DEPAN) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           
-          {/* KARTU EQUITY */}
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between border-emerald-500/30">
+          {/* KARTU EQUITY DINAMIS */}
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between border-emerald-500/30 group">
             <div>
               <span className="text-[10px] text-emerald-400 font-medium uppercase tracking-wider block">Current Equity</span>
-              <div className="text-xl font-bold text-white mt-1 font-mono">${currentEquity.toFixed(2)}</div>
+              <div className="text-xl font-bold text-white mt-1 font-mono transition-all">
+                {formatMoney(currentEquity)}
+              </div>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400"><Wallet className="w-5 h-5" /></div>
           </div>
@@ -421,6 +466,96 @@ export default function Home() {
         </div>
 
       </div>
+
+      {/* MODAL KALKULATOR & KURS */}
+      {currencyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0b1120] border border-slate-800 p-6 rounded-3xl shadow-2xl max-w-sm w-full mx-4 space-y-5 animate-in zoom-in-95 duration-200 relative overflow-hidden">
+            
+            {/* Glow effect */}
+            <div className="absolute -right-10 -top-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-white tracking-tight">Konversi Mata Uang</h3>
+                <p className="text-[11px] text-emerald-400 mt-0.5 font-mono flex items-center gap-1">
+                  1 USD = Rp {idrRate.toLocaleString('id-ID')}
+                </p>
+              </div>
+              <button onClick={() => setCurrencyModalOpen(false)} className="text-slate-500 hover:text-white transition-colors cursor-pointer">
+                ✕
+              </button>
+            </div>
+
+            {/* TOGGLE TAMPILAN SELURUH BALANCE DASHBOARD */}
+            <div className="bg-slate-900/80 border border-slate-800/80 p-3.5 rounded-2xl flex justify-between items-center">
+              <div>
+                <span className="text-xs font-bold text-slate-200 block">Tampilkan Seluruh Balance IDR</span>
+                <span className="text-[10px] text-slate-500">Ubah format mata uang dashboard ke Rupiah</span>
+              </div>
+              <button 
+                onClick={() => setShowInIDR(!showInIDR)}
+                className={`w-12 h-6 rounded-full transition-all duration-300 relative cursor-pointer ${showInIDR ? 'bg-emerald-500' : 'bg-slate-700'}`}
+              >
+                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all duration-300 ${showInIDR ? 'left-7' : 'left-1'}`}></div>
+              </button>
+            </div>
+
+            {/* KALKULATOR MANUAL DENGAN PILIHAN AKUN USD / CENT */}
+            <div className="space-y-3 pt-2 border-t border-slate-800/80">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Kalkulator Konversi</label>
+                
+                {/* PILIHAN AKUN (USD / CENT) */}
+                <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setCalcAccountType('USD')}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${calcAccountType === 'USD' ? 'bg-slate-800 text-white' : 'text-slate-500'}`}
+                  >
+                    USD
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalcAccountType('USC')}
+                    className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all ${calcAccountType === 'USC' ? 'bg-slate-800 text-amber-400' : 'text-slate-500'}`}
+                  >
+                    Cent (USC)
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1">
+                <span className="text-slate-500 font-bold">{calcAccountType === 'USC' ? '¢' : '$'}</span>
+                <input 
+                  type="number"
+                  value={calcInput}
+                  onChange={(e) => setCalcInput(e.target.value ? Number(e.target.value) : '')}
+                  placeholder={calcAccountType === 'USC' ? "Contoh: 5000 cent..." : "Contoh: 50..."}
+                  className="w-full bg-transparent text-white focus:outline-none py-2 text-xs font-mono"
+                />
+              </div>
+
+              <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl text-center mt-2">
+                <span className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest block mb-1">
+                  Setara Dengan ({calcAccountType === 'USC' ? 'Nilai USD: $' + (Number(calcInput || 0) / 100).toFixed(2) : 'Rupiah'})
+                </span>
+                <span className="text-base font-bold text-emerald-400 font-mono">
+                  Rp {calcInput ? (
+                    calcAccountType === 'USC' 
+                      ? ((Number(calcInput) / 100) * idrRate).toLocaleString('id-ID', { maximumFractionDigits: 0 })
+                      : (Number(calcInput) * idrRate).toLocaleString('id-ID', { maximumFractionDigits: 0 })
+                  ) : '0'}
+                </span>
+              </div>
+            </div>
+
+            <button onClick={() => setCurrencyModalOpen(false)} className="w-full bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer">
+              Selesai
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* MODAL KONFIRMASI HAPUS DI TENGAH */}
       {deleteModalOpen && (
