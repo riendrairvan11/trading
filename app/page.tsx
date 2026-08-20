@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import DashboardChart from './DashboardChart';
 import TradeForm from './TradeForm';
-import { Trophy, Activity, TrendingUp, TrendingDown, Layers, Wallet, Calendar, Percent, Scale, Coins, PieChart } from 'lucide-react';
+import { Trophy, Activity, TrendingDown, Layers, Wallet, Calendar, Percent, Scale, Coins, PieChart } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
 
-// Pastikan baris ini di bagian atas app/page.tsx
+// Inisialisasi Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -15,6 +15,9 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 export default function Home() {
   const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Modal Awal (Bisa diubah dari UI atau statis)
+  const [initialBalance, setInitialBalance] = useState(0);
 
   const [filterDirection, setFilterDirection] = useState('All');
   const [filterAccount, setFilterAccount] = useState('All');
@@ -27,8 +30,7 @@ export default function Home() {
   const itemsPerPage = 10;
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
-
+  const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
 
   // 1. AMBIL DATA DARI SUPABASE
   useEffect(() => {
@@ -44,7 +46,6 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
 
       if (error) throw error;
       if (data) {
-        // Mapping account_type dari database ke accountType untuk frontend
         const formatted = data.map((item) => ({
           ...item,
           accountType: item.account_type || item.accountType || 'USD',
@@ -55,7 +56,6 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
       console.error('Gagal mengambil data dari Supabase:', error);
       setTrades([
         { id: 1, date: '2026-08-10', pair: 'XAUUSD', direction: 'Sell', lot: 0.5, accountType: 'USD', pl: 150.00 },
-        { id: 2, date: '2026-08-12', pair: 'EURUSD', direction: 'Buy', lot: 1.0, accountType: 'USC', pl: 50000.00 },
       ]);
     } finally {
       setLoading(false);
@@ -88,32 +88,27 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
           accountType: data[0].account_type
         };
         setTrades([formattedData, ...trades]);
+        toast.success("Transaksi berhasil ditambahkan!");
       }
     } catch (error) {
       console.error('Gagal menyimpan ke Supabase:', error);
       const fallbackEntry = { id: Date.now(), date: today, ...newTradeData };
       setTrades([fallbackEntry, ...trades]);
+      toast.success("Transaksi disimpan (Lokal)!");
     }
     setCurrentPage(1);
   };
 
   // 3. HAPUS TRADE DARI SUPABASE
-  // Membuka modal konfirmasi di tengah
   const confirmDeleteTrade = (id: number) => {
     setTradeToDeleteId(id);
     setDeleteModalOpen(true);
   };
 
-  // Eksekusi hapus setelah pengguna menekan "Ya, Hapus"
   const executeDelete = async () => {
     if (!tradeToDeleteId) return;
-
     try {
-      const { error } = await supabase
-        .from('trades')
-        .delete()
-        .eq('id', tradeToDeleteId);
-
+      const { error } = await supabase.from('trades').delete().eq('id', tradeToDeleteId);
       if (error) throw error;
       setTrades(trades.filter((t) => t.id !== tradeToDeleteId));
       toast.success("Riwayat transaksi berhasil dihapus!");
@@ -127,13 +122,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
     }
   };
 
-  // Helper Normalisasi P/L (USC dibagi 100 menjadi USD)
-  function currPLNormal(t: any) {
-    const val = Number(t.pl) || 0;
-    const accType = t.accountType || t.account_type || 'USD';
-    return accType === 'USC' ? val / 100 : val;
-  }
-
+  // 4. FILTERING DATA TABEL
   const filteredTrades = trades.filter((t) => {
     const accType = t.accountType || t.account_type || 'USD';
     const matchDirection = filterDirection === 'All' || t.direction === filterDirection;
@@ -147,32 +136,45 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
     return matchDirection && matchAccount && matchSearch && matchDate;
   });
 
-  // PENGHITUNGAN P/L UTAMA (Header Atas)
-  const totalPLUSD = trades.reduce((acc, curr) => {
-    return acc + currPLNormal(curr);
-  }, 0);
+  // ==========================================
+  // BLOK PERHITUNGAN STATISTIK (BEBAS ERROR)
+  // ==========================================
+  
+  // Helper 1: Normalisasi USC ke USD
+  function currPLNormal(t: any) {
+    const val = Number(t.pl) || 0;
+    const accType = t.accountType || t.account_type || 'USD';
+    return accType === 'USC' ? val / 100 : val;
+  }
 
-  const winningTrades = trades.filter((t) => currPLNormal(t) > 0).length;
-  const losingTrades = trades.filter((t) => currPLNormal(t) < 0).length;
-  const winRate = trades.length > 0 ? ((winningTrades / trades.length) * 100).toFixed(1) : '0';
+  // Helper 2: Filter agar Deposit/Withdraw tidak merusak statistik Win Rate
+  const isTrade = (t: any) => t.pair !== 'DEPOSIT' && t.pair !== 'WITHDRAW';
 
-  const totalProfit = trades.map(currPLNormal).filter(val => val > 0).reduce((acc, curr) => acc + curr, 0);
-  const totalLoss = Math.abs(trades.map(currPLNormal).filter(val => val < 0).reduce((acc, curr) => acc + curr, 0));
+  // Kalkulasi Equity & P/L Total
+  const totalPLUSD = trades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
+  const currentEquity = initialBalance + totalPLUSD;
+
+  // Statistik Trading Murni (Mengabaikan Deposit)
+  const winningTrades = trades.filter((t) => isTrade(t) && currPLNormal(t) > 0).length;
+  const losingTrades = trades.filter((t) => isTrade(t) && currPLNormal(t) < 0).length;
+  const totalTrades = trades.filter(isTrade).length;
+  
+  const winRate = totalTrades > 0 ? ((winningTrades / totalTrades) * 100).toFixed(1) : '0';
+  
+  const totalProfit = trades.filter(isTrade).map(currPLNormal).filter(val => val > 0).reduce((acc, curr) => acc + curr, 0);
+  const totalLoss = Math.abs(trades.filter(isTrade).map(currPLNormal).filter(val => val < 0).reduce((acc, curr) => acc + curr, 0));
   const profitFactor = totalLoss > 0 ? (totalProfit / totalLoss).toFixed(2) : totalProfit > 0 ? 'Infinite' : '0.00';
-  const avgPL = trades.length > 0 ? (totalPLUSD / trades.length).toFixed(2) : '0';
-  const totalLotSize = trades.reduce((acc, curr) => acc + (Number(curr.lot) || 0), 0).toFixed(2);
+  
+  const totalTradePL = trades.filter(isTrade).reduce((acc, curr) => acc + currPLNormal(curr), 0);
+  const avgPL = totalTrades > 0 ? (totalTradePL / totalTrades).toFixed(2) : '0';
+  const totalLotSize = trades.filter(isTrade).reduce((acc, curr) => acc + (Number(curr.lot) || 0), 0).toFixed(2);
   const winLossRatio = `${winningTrades}W : ${losingTrades}L`;
 
-  // Total P/L khusus tabel (berdasarkan filter)
-  const filteredTotalPLUSD = filteredTrades.reduce((acc, curr) => {
-    return acc + currPLNormal(curr);
-  }, 0);
-
-  const chartData = trades.slice().reverse().map((t) => ({
-    date: t.date,
-    pl: currPLNormal(t),
-  }));
-
+  // Kalkulasi Tabel
+  const filteredTotalPLUSD = filteredTrades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
+  const chartData = trades.slice().reverse().map((t) => ({ date: t.date, pl: currPLNormal(t) }));
+  
+  // Pagination
   const totalPages = Math.ceil(filteredTrades.length / itemsPerPage) || 1;
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -181,6 +183,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 font-sans selection:bg-emerald-500 selection:text-slate-950 relative overflow-hidden">
       
+      {/* Background Ornamen */}
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-600/10 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute top-1/3 right-10 w-96 h-96 bg-teal-600/10 rounded-full blur-[140px] pointer-events-none"></div>
       <div className="absolute bottom-10 left-10 w-80 h-80 bg-blue-600/5 rounded-full blur-[150px] pointer-events-none"></div>
@@ -188,6 +191,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
 
       <div className="max-w-7xl mx-auto space-y-8 relative z-10">
         
+        {/* HEADER */}
         <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-800/80 transition-all">
           <div>
             <div className="flex items-center gap-2">
@@ -212,8 +216,18 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
           </div>
         </header>
 
-        {/* 6 KARTU STATISTIK */}
+        {/* KARTU STATISTIK (DENGAN EQUITY DI DEPAN) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          
+          {/* KARTU EQUITY */}
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between border-emerald-500/30">
+            <div>
+              <span className="text-[10px] text-emerald-400 font-medium uppercase tracking-wider block">Current Equity</span>
+              <div className="text-xl font-bold text-white mt-1 font-mono">${currentEquity.toFixed(2)}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400"><Wallet className="w-5 h-5" /></div>
+          </div>
+
           <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between">
             <div>
               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Win Rate Akurasi</span>
@@ -225,7 +239,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
           <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between">
             <div>
               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Total Posisi</span>
-              <div className="text-xl font-bold text-white mt-1 font-mono">{trades.length} Trades</div>
+              <div className="text-xl font-bold text-white mt-1 font-mono">{totalTrades} Trades</div>
             </div>
             <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400"><Layers className="w-5 h-5" /></div>
           </div>
@@ -248,14 +262,6 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
 
           <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between">
             <div>
-              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Win / Loss Ratio</span>
-              <div className="text-xl font-bold text-purple-400 mt-1 font-mono">{winLossRatio}</div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400"><PieChart className="w-5 h-5" /></div>
-          </div>
-
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between">
-            <div>
               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider block">Rata-rata P/L (USD)</span>
               <div className={`text-xl font-bold mt-1 font-mono ${Number(avgPL) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {Number(avgPL) >= 0 ? `+$${avgPL}` : `-$${Math.abs(Number(avgPL))}`}
@@ -265,7 +271,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
           </div>
         </div>
 
-        {/* Grafik & Form */}
+        {/* GRAFIK & FORM */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
             <DashboardChart data={chartData} />
@@ -275,7 +281,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
           </div>
         </div>
 
-        {/* Riwayat Transaksi */}
+        {/* RIWAYAT TRANSAKSI */}
         <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-800 p-6 rounded-3xl shadow-2xl space-y-6">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div>
@@ -344,7 +350,7 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
                         <td className="py-3.5 px-4 text-slate-400">{t.date}</td>
                         <td className="py-3.5 px-4 font-bold text-white text-sm">{t.pair}</td>
                         <td className="py-3.5 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold ${t.direction === 'Buy' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-bold ${t.direction === 'Buy' ? 'bg-emerald-500/10 text-emerald-400' : t.direction === 'Sell' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-500/10 text-slate-400'}`}>
                             {t.direction}
                           </span>
                         </td>
@@ -398,29 +404,15 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
               </div>
 
               <div className="flex items-center gap-1.5 font-mono">
-                <button
-                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer"
-                >
+                <button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer">
                   Prev
                 </button>
-
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    className={`w-8 h-8 rounded-lg font-medium transition-all cursor-pointer ${currentPage === page ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/20' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:border-slate-700'}`}
-                  >
+                  <button key={page} onClick={() => setCurrentPage(page)} className={`w-8 h-8 rounded-lg font-medium transition-all cursor-pointer ${currentPage === page ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/20' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:border-slate-700'}`}>
                     {page}
                   </button>
                 ))}
-
-                <button
-                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer"
-                >
+                <button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer">
                   Next
                 </button>
               </div>
@@ -429,37 +421,26 @@ const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
         </div>
 
       </div>
+
       {/* MODAL KONFIRMASI HAPUS DI TENGAH */}
       {deleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-2xl max-w-sm w-full mx-4 text-center space-y-4 animate-in zoom-in-95 duration-200">
-            
-            {/* Ikon Peringatan */}
             <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mx-auto shadow-inner">
               <TrendingDown className="w-6 h-6" />
             </div>
-
             <div>
               <h3 className="text-lg font-bold text-white tracking-tight">Hapus Transaksi?</h3>
               <p className="text-xs text-slate-400 mt-1">Data yang dihapus tidak dapat dikembalikan lagi dari database.</p>
             </div>
-
-            {/* Tombol Aksi */}
             <div className="flex items-center gap-3 pt-2">
-              <button
-                onClick={() => setDeleteModalOpen(false)}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer"
-              >
+              <button onClick={() => setDeleteModalOpen(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer">
                 Batal
               </button>
-              <button
-                onClick={executeDelete}
-                className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2.5 rounded-xl text-xs font-semibold shadow-lg shadow-rose-500/25 transition-all cursor-pointer"
-              >
+              <button onClick={executeDelete} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2.5 rounded-xl text-xs font-semibold shadow-lg shadow-rose-500/25 transition-all cursor-pointer">
                 Ya, Hapus
               </button>
             </div>
-
           </div>
         </div>
       )}
