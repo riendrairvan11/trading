@@ -373,15 +373,15 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-3">
             
-            {/* FILTER PERIODE GRAFIK (BERSIH & SIMPEL) */}
-            <div className="flex justify-between items-center bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+            {/* FILTER PERIODE GRAFIK (RESPONSIF MOBILE) */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
               <span className="text-xs font-bold text-slate-300">Grup Periode Grafik:</span>
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <div className="grid grid-cols-4 sm:flex w-full sm:w-auto bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
                 {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
                   <button
                     key={p}
                     onClick={() => setChartPeriod(p)}
-                    className={`px-3.5 py-1.5 text-[11px] font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                    className={`px-2.5 sm:px-3.5 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all capitalize text-center cursor-pointer ${
                       chartPeriod === p 
                         ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' 
                         : 'text-slate-400 hover:text-white'
