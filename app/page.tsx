@@ -155,28 +155,39 @@ export default function Home() {
   });
 
   // ==========================================
-  // BLOK PERHITUNGAN STATISTIK (BEBAS ERROR)
+  // BLOK PERHITUNGAN SEPARASI AKUN (USC & USD)
   // ==========================================
   
-  // Helper 1: Normalisasi USC ke USD
+  const isTrade = (t: any) => t.pair !== 'DEPOSIT' && t.pair !== 'WITHDRAW';
+
+  // Helper Normalisasi P/L untuk statistik umum
   function currPLNormal(t: any) {
     const val = Number(t.pl) || 0;
     const accType = t.accountType || t.account_type || 'USD';
     return accType === 'USC' ? val / 100 : val;
   }
 
-  // Helper 2: Filter agar Deposit/Withdraw tidak merusak statistik Win Rate
-  const isTrade = (t: any) => t.pair !== 'DEPOSIT' && t.pair !== 'WITHDRAW';
+  // A. KALKULASI MURNI AKUN CENT (USC) - Hanya Trade Murni
+  const uscTrades = trades.filter((t) => isTrade(t) && (t.accountType === 'USC' || t.account_type === 'USC'));
+  const totalPLCentRaw = uscTrades.reduce((acc, curr) => acc + (Number(curr.pl) || 0), 0);
+  const totalPLCentInUSD = totalPLCentRaw / 100;
 
-  // Kalkulasi Equity & P/L Total
-  const totalPLUSD = trades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
-  const currentEquity = initialBalance + totalPLUSD;
+  // B. KALKULASI MURNI AKUN USD - Hanya Trade Murni
+  const usdTrades = trades.filter((t) => isTrade(t) && (t.accountType || t.account_type || 'USD') === 'USD');
+  const totalPLUSDOnly = usdTrades.reduce((acc, curr) => acc + (Number(curr.pl) || 0), 0);
 
-  // Statistik Trading Murni (Mengabaikan Deposit)
+  // C. TOTAL P/L GABUNGAN (Net P&L murni trading tanpa Deposit/Withdraw)
+  const totalPLUSD = totalPLUSDOnly + totalPLCentInUSD;
+
+  // D. EQUITY (Menghitung Modal Awal + Seluruh Transaksi Termasuk Deposit/Withdraw)
+  const totalAllTransactionsUSD = trades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
+  const currentEquity = initialBalance + totalAllTransactionsUSD;
+  const currentEquityCent = currentEquity * 100;
+
+  // Statistik Performa Trading (Hanya dari Trade murni)
   const winningTrades = trades.filter((t) => isTrade(t) && currPLNormal(t) > 0).length;
   const losingTrades = trades.filter((t) => isTrade(t) && currPLNormal(t) < 0).length;
   const totalTrades = trades.filter(isTrade).length;
-  
   const winRate = totalTrades > 0 ? ((winningTrades / totalTrades) * 100).toFixed(1) : '0';
   
   const totalProfit = trades.filter(isTrade).map(currPLNormal).filter(val => val > 0).reduce((acc, curr) => acc + curr, 0);
@@ -187,7 +198,7 @@ export default function Home() {
   const avgPL = totalTrades > 0 ? (totalTradePL / totalTrades).toFixed(2) : '0';
   const totalLotSize = trades.filter(isTrade).reduce((acc, curr) => acc + (Number(curr.lot) || 0), 0).toFixed(2);
   const winLossRatio = `${winningTrades}W : ${losingTrades}L`;
-
+  
   // Kalkulasi Tabel
   const filteredTotalPLUSD = filteredTrades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
   const chartData = trades.slice().reverse().map((t) => ({ date: t.date, pl: currPLNormal(t) }));
@@ -262,15 +273,23 @@ export default function Home() {
         {/* KARTU STATISTIK (DENGAN EQUITY DI DEPAN) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           
-          {/* KARTU EQUITY DINAMIS */}
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between border-emerald-500/30 group">
+          {/* KARTU EQUITY DENGAN OPSI CENT */}
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between border-emerald-500/30">
             <div>
               <span className="text-[10px] text-emerald-400 font-medium uppercase tracking-wider block">Current Equity</span>
-              <div className="text-xl font-bold text-white mt-1 font-mono transition-all">
-                {formatMoney(currentEquity)}
+              <div className="text-xl font-bold text-white mt-1 font-mono">
+                {showInIDR 
+                  ? `Rp ${(currentEquity * idrRate).toLocaleString('id-ID', { maximumFractionDigits: 0 })}` 
+                  : `$${currentEquity.toFixed(2)}`}
               </div>
+              {/* Teks kecil penjelas nominal utuh dalam Cent */}
+              <span className="text-[10px] text-amber-400 font-mono block mt-0.5">
+                ({currentEquityCent.toLocaleString('id-ID', { maximumFractionDigits: 2 })} cent ¢)
+              </span>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400"><Wallet className="w-5 h-5" /></div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <Wallet className="w-5 h-5" />
+            </div>
           </div>
 
           <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 p-4 rounded-2xl shadow-lg flex items-center justify-between">
@@ -406,12 +425,20 @@ export default function Home() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 font-bold text-sm">
-                          <span className={normalPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                            {normalPL >= 0 ? `+$${normalPL.toFixed(2)}` : `-$${Math.abs(normalPL).toFixed(2)}`}
-                          </span>
-                          {accType === 'USC' && (
-                            <span className="block text-[10px] text-slate-500 font-normal">
-                              ({rawPL >= 0 ? `+${rawPL} cent` : `${rawPL} cent`} / 100)
+                          {accType === 'USC' ? (
+                            /* TAMPILAN MURNI AKUN CENT */
+                            <div>
+                              <span className={rawPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                                {rawPL >= 0 ? `+${rawPL.toLocaleString('id-ID')} ¢` : `${rawPL.toLocaleString('id-ID')} ¢`}
+                              </span>
+                              <span className="block text-[10px] text-slate-400 font-normal">
+                                (Setara: ${normalPL >= 0 ? `+${normalPL.toFixed(2)}` : `${normalPL.toFixed(2)}`})
+                              </span>
+                            </div>
+                          ) : (
+                            /* TAMPILAN NORMAL AKUN USD */
+                            <span className={rawPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                              {rawPL >= 0 ? `+$${rawPL.toFixed(2)}` : `-$${Math.abs(rawPL).toFixed(2)}`}
                             </span>
                           )}
                         </td>
@@ -435,11 +462,21 @@ export default function Home() {
             </table>
           </div>
 
-          <div className="bg-slate-950/80 border border-slate-800/80 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-2">
-            <span className="text-xs text-slate-400 font-medium">Total P/L Setara USD (Berdasarkan Filter):</span>
-            <span className={`text-base font-extrabold font-mono ${filteredTotalPLUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {filteredTotalPLUSD >= 0 ? `+$${filteredTotalPLUSD.toFixed(2)}` : `-$${Math.abs(filteredTotalPLUSD).toFixed(2)}`}
-            </span>
+          <div className="bg-slate-950/80 border border-slate-800/80 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-slate-400 font-medium">Ringkasan Total P/L (Berdasarkan Filter):</span>
+              <span className="text-[11px] text-amber-400 font-mono">
+                Total Akun Cent: {filteredTrades.filter(t => (t.accountType === 'USC' || t.account_type === 'USC')).reduce((a, b) => a + (Number(b.pl) || 0), 0).toLocaleString('id-ID')} ¢ 
+                <span className="text-slate-400"> (Konversi: ${(filteredTrades.filter(t => (t.accountType === 'USC' || t.account_type === 'USC')).reduce((a, b) => a + (Number(b.pl) || 0), 0) / 100).toFixed(2)})</span>
+              </span>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Keseluruhan (USD)</span>
+              <span className={`text-base font-extrabold font-mono ${filteredTotalPLUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {formatMoney(filteredTotalPLUSD, true)}
+              </span>
+            </div>
           </div>
 
           {filteredTrades.length > 0 && (
