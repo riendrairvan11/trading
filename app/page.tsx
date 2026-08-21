@@ -19,6 +19,9 @@ export default function Home() {
   // Modal Awal (Bisa diubah dari UI atau statis)
   const [initialBalance, setInitialBalance] = useState(0);
 
+  // State untuk filter periode grafik: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  const [chartPeriod, setChartPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
+
   const [filterDirection, setFilterDirection] = useState('All');
   const [filterAccount, setFilterAccount] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -199,6 +202,37 @@ export default function Home() {
   const totalLotSize = trades.filter(isTrade).reduce((acc, curr) => acc + (Number(curr.lot) || 0), 0).toFixed(2);
   const winLossRatio = `${winningTrades}W : ${losingTrades}L`;
 
+  // LOGIKA PENGELOMPOKAN DATA GRAFIK
+  const groupedChartData = trades.slice().reverse().reduce((acc: any[], trade) => {
+    const dateObj = new Date(trade.date);
+    let key = trade.date; // Default Harian (YYYY-MM-DD)
+
+    if (chartPeriod === 'weekly') {
+      // Ambil tanggal awal minggu (Hari Senin)
+      const day = dateObj.getDay();
+      const diff = dateObj.getDate() - day + (day === 0 ? -6 : 1);
+      const startOfWeek = new Date(dateObj.setDate(diff));
+      key = `W-${startOfWeek.toISOString().split('T')[0]}`;
+    } else if (chartPeriod === 'monthly') {
+      // Format Bulan (YYYY-MM)
+      key = trade.date.substring(0, 7);
+    } else if (chartPeriod === 'yearly') {
+      // Format Tahun (YYYY)
+      key = trade.date.substring(0, 4);
+    }
+
+    const existing = acc.find((item) => item.date === key);
+    const plValue = currPLNormal(trade);
+
+    if (existing) {
+      existing.pl += plValue;
+    } else {
+      acc.push({ date: key, pl: plValue });
+    }
+
+    return acc;
+  }, []);
+
   // Kalkulasi Tabel
   const filteredTotalPLUSD = filteredTrades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
   const chartData = trades.slice().reverse().map((t) => ({ date: t.date, pl: currPLNormal(t) }));
@@ -337,9 +371,32 @@ export default function Home() {
 
         {/* GRAFIK & FORM */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <DashboardChart data={chartData} />
+          <div className="lg:col-span-2 space-y-3">
+            
+            {/* FILTER PERIODE GRAFIK (BERSIH & SIMPEL) */}
+            <div className="flex justify-between items-center bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+              <span className="text-xs font-bold text-slate-300">Grup Periode Grafik:</span>
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setChartPeriod(p)}
+                    className={`px-3.5 py-1.5 text-[11px] font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                      chartPeriod === p 
+                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' 
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {p === 'daily' ? 'Harian' : p === 'weekly' ? 'Mingguan' : p === 'monthly' ? 'Bulanan' : 'Tahunan'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* KOMPONEN GRAFIK (MENGGUNAKAN DATA TERIKAT GROUPEDCHARTDATA) */}
+            <DashboardChart data={groupedChartData} />
           </div>
+
           <div className="lg:col-span-1">
             <TradeForm onSubmit={handleAddTrade} />
           </div>
