@@ -27,7 +27,7 @@ export default function Home() {
   const [endDate, setEndDate] = useState('');
 
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [tradeToDeleteId, setTradeToDeleteId] = useState<number | null>(null);
@@ -198,7 +198,7 @@ export default function Home() {
   const avgPL = totalTrades > 0 ? (totalTradePL / totalTrades).toFixed(2) : '0';
   const totalLotSize = trades.filter(isTrade).reduce((acc, curr) => acc + (Number(curr.lot) || 0), 0).toFixed(2);
   const winLossRatio = `${winningTrades}W : ${losingTrades}L`;
-  
+
   // Kalkulasi Tabel
   const filteredTotalPLUSD = filteredTrades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
   const chartData = trades.slice().reverse().map((t) => ({ date: t.date, pl: currPLNormal(t) }));
@@ -481,23 +481,62 @@ export default function Home() {
 
           {filteredTrades.length > 0 && (
             <div className="flex flex-col sm:flex-row justify-between items-center pt-4 border-t border-slate-800/80 gap-4 text-xs text-slate-400">
-              <div>
-                Menampilkan <span className="text-white font-medium">{indexOfFirstItem + 1}</span> - <span className="text-white font-medium">{Math.min(indexOfLastItem, filteredTrades.length)}</span> dari <span className="text-white font-medium">{filteredTrades.length}</span> data
+              
+              {/* KIRI: INFORMASI JUMLAH DATA & DROPDOWN PILIHAN BARIS */}
+              <div className="flex items-center gap-3">
+                <div>
+                  Menampilkan <span className="text-white font-medium">{indexOfFirstItem + 1}</span> - <span className="text-white font-medium">{Math.min(indexOfLastItem, filteredTrades.length)}</span> dari <span className="text-white font-medium">{filteredTrades.length}</span> data
+                </div>
+
+                {/* DROPDOWN PILIHAN BARIS PER HALAMAN */}
+                <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1 text-slate-400">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Tampilkan:</span>
+                  <select 
+                    value={itemsPerPage} 
+                    onChange={(e) => { 
+                      setItemsPerPage(Number(e.target.value)); 
+                      setCurrentPage(1); // Reset ke halaman pertama saat opsi diubah
+                    }}
+                    className="bg-transparent text-white font-mono text-xs focus:outline-none cursor-pointer"
+                  >
+                    <option value={10} className="bg-slate-900 text-white">10</option>
+                    <option value={20} className="bg-slate-900 text-white">20</option>
+                    <option value={50} className="bg-slate-900 text-white">50</option>
+                    <option value={100} className="bg-slate-900 text-white">100</option>
+                    <option value={1000} className="bg-slate-900 text-white">1000</option>
+                  </select>
+                </div>
               </div>
 
+              {/* KANAN: TOMBOL NAVIGASI PAGINATION (PREV / NEXT) */}
               <div className="flex items-center gap-1.5 font-mono">
-                <button onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer">
+                <button 
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))} 
+                  disabled={currentPage === 1} 
+                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer"
+                >
                   Prev
                 </button>
+                
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                  <button key={page} onClick={() => setCurrentPage(page)} className={`w-8 h-8 rounded-lg font-medium transition-all cursor-pointer ${currentPage === page ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/20' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:border-slate-700'}`}>
+                  <button 
+                    key={page} 
+                    onClick={() => setCurrentPage(page)} 
+                    className={`w-8 h-8 rounded-lg font-medium transition-all cursor-pointer ${currentPage === page ? 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/20' : 'bg-slate-950 border border-slate-800 text-slate-300 hover:border-slate-700'}`}
+                  >
                     {page}
                   </button>
                 ))}
-                <button onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer">
+
+                <button 
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))} 
+                  disabled={currentPage === totalPages} 
+                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-700 transition-all cursor-pointer"
+                >
                   Next
                 </button>
               </div>
+
             </div>
           )}
         </div>
