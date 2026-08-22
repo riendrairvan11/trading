@@ -15,6 +15,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(true);
   const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,6 +65,34 @@ export default function Home() {
       })
       .catch(err => console.error('Gagal mengambil kurs API:', err));
   }, []);
+  // 1. CEK SESI LOGIN SUPABASE SAAT HALAMAN DI-REFRESH
+  useEffect(() => {
+    const checkUserSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setIsLoggedIn(true);
+      }
+      setLoadingSession(false);
+    };
+
+    checkUserSession();
+
+    // Listener otomatis jika ada perubahan sesi login/logout
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+      setLoadingSession(false);
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Handler Logout dari Supabase
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsLoggedIn(false);
+  };
 
   const fetchTrades = async () => {
     try {
@@ -267,6 +296,15 @@ export default function Home() {
     return formatted;
   };
 
+  // Tampilkan Spinner Loading sebentar saat aplikasi sedang mengecek sesi Supabase
+  if (loadingSession) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   // Jika belum login, tampilkan LoginForm
   if (!isLoggedIn) {
     return <LoginForm onLoginSuccess={() => setIsLoggedIn(true)} />;
@@ -318,7 +356,7 @@ export default function Home() {
             </div>
 
             <button
-              onClick={() => setIsLoggedIn(false)}
+              onClick={handleLogout}
               className="bg-slate-900 hover:bg-rose-500/10 hover:text-rose-400 border border-slate-800 text-slate-400 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
