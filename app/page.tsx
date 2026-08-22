@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import LoginForm from "./LoginForm";
 import DashboardChart from './DashboardChart';
 import TradeForm from './TradeForm';
-import { Trophy, Activity, TrendingDown, Layers, Wallet, Calendar, Percent, Scale, Coins, PieChart } from 'lucide-react';
+import { Trophy, Activity, TrendingDown, Layers, Wallet, Calendar, Percent, Scale, Coins, LogOut } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
 
@@ -13,6 +14,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default function Home() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -265,6 +267,11 @@ export default function Home() {
     return formatted;
   };
 
+  // Jika belum login, tampilkan LoginForm
+  if (!isLoggedIn) {
+    return <LoginForm onLoginSuccess={() => setIsLoggedIn(true)} />;
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-8 font-sans selection:bg-emerald-500 selection:text-slate-950 relative overflow-hidden">
       
@@ -309,6 +316,14 @@ export default function Home() {
                 </span>
               </div>
             </div>
+
+            <button
+              onClick={() => setIsLoggedIn(false)}
+              className="bg-slate-900 hover:bg-rose-500/10 hover:text-rose-400 border border-slate-800 text-slate-400 px-3.5 py-3 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Keluar</span>
+            </button>
           </div>
         </header>
 
