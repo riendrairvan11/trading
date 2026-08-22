@@ -22,6 +22,11 @@ export default function Home() {
   // State untuk filter periode grafik: 'daily' | 'weekly' | 'monthly' | 'yearly'
   const [chartPeriod, setChartPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');
 
+  // 1. STATE FILTER GRAFIK
+  const [chartViewMode, setChartViewMode] = useState<'daily' | 'monthly' | 'all'>('daily');
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7)); // YYYY-MM
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString()); // YYYY
+
   const [filterDirection, setFilterDirection] = useState('All');
   const [filterAccount, setFilterAccount] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -202,23 +207,25 @@ export default function Home() {
   const totalLotSize = trades.filter(isTrade).reduce((acc, curr) => acc + (Number(curr.lot) || 0), 0).toFixed(2);
   const winLossRatio = `${winningTrades}W : ${losingTrades}L`;
 
-  // LOGIKA PENGELOMPOKAN DATA GRAFIK
+  // LOGIKA PENGELOMPOKAN DATA GRAFIK BERDASARKAN BULAN / TAHUN
   const groupedChartData = trades.slice().reverse().reduce((acc: any[], trade) => {
-    const dateObj = new Date(trade.date);
-    let key = trade.date; // Default Harian (YYYY-MM-DD)
+    const tradeDate = trade.date; // YYYY-MM-DD
+    const tradeMonth = tradeDate.substring(0, 7); // YYYY-MM
+    const tradeYear = tradeDate.substring(0, 4); // YYYY
 
-    if (chartPeriod === 'weekly') {
-      // Ambil tanggal awal minggu (Hari Senin)
-      const day = dateObj.getDay();
-      const diff = dateObj.getDate() - day + (day === 0 ? -6 : 1);
-      const startOfWeek = new Date(dateObj.setDate(diff));
-      key = `W-${startOfWeek.toISOString().split('T')[0]}`;
-    } else if (chartPeriod === 'monthly') {
-      // Format Bulan (YYYY-MM)
-      key = trade.date.substring(0, 7);
-    } else if (chartPeriod === 'yearly') {
-      // Format Tahun (YYYY)
-      key = trade.date.substring(0, 4);
+    let key = '';
+
+    if (chartViewMode === 'daily') {
+      // Harian dalam Bulan yang Dipilih
+      if (tradeMonth === selectedMonth) key = tradeDate;
+      else return acc;
+    } else if (chartViewMode === 'monthly') {
+      // Bulanan dalam Tahun yang Dipilih
+      if (tradeYear === selectedYear) key = tradeMonth;
+      else return acc;
+    } else if (chartViewMode === 'all') {
+      // Keseluruhan (Gabungan per Bulan sepanjang Waktu)
+      key = tradeMonth;
     }
 
     const existing = acc.find((item) => item.date === key);
@@ -232,6 +239,7 @@ export default function Home() {
 
     return acc;
   }, []);
+
 
   // Kalkulasi Tabel
   const filteredTotalPLUSD = filteredTrades.reduce((acc, curr) => acc + currPLNormal(curr), 0);
@@ -373,27 +381,129 @@ export default function Home() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-3">
             
-            {/* FILTER PERIODE GRAFIK (RESPONSIF MOBILE) */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
-              <span className="text-xs font-bold text-slate-300">Grup Periode Grafik:</span>
-              <div className="grid grid-cols-4 sm:flex w-full sm:w-auto bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
-                {(['daily', 'weekly', 'monthly', 'yearly'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setChartPeriod(p)}
-                    className={`px-2.5 sm:px-3.5 py-1.5 text-[10px] sm:text-[11px] font-bold rounded-lg transition-all capitalize text-center cursor-pointer ${
-                      chartPeriod === p 
-                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' 
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {p === 'daily' ? 'Harian' : p === 'weekly' ? 'Mingguan' : p === 'monthly' ? 'Bulanan' : 'Tahunan'}
-                  </button>
-                ))}
+            {/* FILTER RENTANG WAKTU GRAFIK (DROPDOWN TERPISAH BISA PILIH TAHUN & BULAN) */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+              
+              {/* TOMBOL MODUS GRAFIK */}
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setChartViewMode('daily')}
+                  className={`flex-1 sm:flex-none px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    chartViewMode === 'daily'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Harian
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartViewMode('monthly')}
+                  className={`flex-1 sm:flex-none px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    chartViewMode === 'monthly'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Bulanan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartViewMode('all')}
+                  className={`flex-1 sm:flex-none px-3 py-1.5 text-[11px] font-bold rounded-lg transition-all text-center cursor-pointer ${
+                    chartViewMode === 'all'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Semua
+                </button>
               </div>
+
+              {/* DROPDOWN DINAMIS Terpisah untuk Mobile & Desktop */}
+              {chartViewMode !== 'all' && (
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+                  
+                  {/* Mode HARIAN: Tampilkan Pemilih TAHUN dan BULAN Terpisah */}
+                  {chartViewMode === 'daily' && (
+                    <>
+                      {/* Pemilih Tahun */}
+                      <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5">
+                        <select
+                          value={selectedMonth.substring(0, 4)}
+                          onChange={(e) => {
+                            const newYear = e.target.value;
+                            const currentM = selectedMonth.substring(5, 7) || '01';
+                            setSelectedMonth(`${newYear}-${currentM}`);
+                          }}
+                          className="bg-transparent text-emerald-400 font-mono text-xs font-bold focus:outline-none cursor-pointer"
+                        >
+                          {Array.from(new Set(trades.map((t) => t.date.substring(0, 4))))
+                            .sort()
+                            .reverse()
+                            .map((year) => (
+                              <option key={year} value={year} className="bg-slate-900 text-white">
+                                {year}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Pemilih Bulan */}
+                      <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5">
+                        <select
+                          value={selectedMonth.substring(5, 7)}
+                          onChange={(e) => {
+                            const currentY = selectedMonth.substring(0, 4) || new Date().getFullYear().toString();
+                            const newMonth = e.target.value;
+                            setSelectedMonth(`${currentY}-${newMonth}`);
+                          }}
+                          className="bg-transparent text-emerald-400 font-mono text-xs font-bold focus:outline-none cursor-pointer"
+                        >
+                          <option value="01" className="bg-slate-900 text-white">Januari</option>
+                          <option value="02" className="bg-slate-900 text-white">Februari</option>
+                          <option value="03" className="bg-slate-900 text-white">Maret</option>
+                          <option value="04" className="bg-slate-900 text-white">April</option>
+                          <option value="05" className="bg-slate-900 text-white">Mei</option>
+                          <option value="06" className="bg-slate-900 text-white">Juni</option>
+                          <option value="07" className="bg-slate-900 text-white">Juli</option>
+                          <option value="08" className="bg-slate-900 text-white">Agustus</option>
+                          <option value="09" className="bg-slate-900 text-white">September</option>
+                          <option value="10" className="bg-slate-900 text-white">Oktober</option>
+                          <option value="11" className="bg-slate-900 text-white">November</option>
+                          <option value="12" className="bg-slate-900 text-white">Desember</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Mode BULANAN: Tampilkan Pemilih TAHUN saja */}
+                  {chartViewMode === 'monthly' && (
+                    <div className="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(e.target.value)}
+                        className="bg-transparent text-emerald-400 font-mono text-xs font-bold focus:outline-none cursor-pointer"
+                      >
+                        {Array.from(new Set(trades.map((t) => t.date.substring(0, 4))))
+                          .sort()
+                          .reverse()
+                          .map((year) => (
+                            <option key={year} value={year} className="bg-slate-900 text-white">
+                              Tahun {year}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
             </div>
 
-            {/* KOMPONEN GRAFIK (MENGGUNAKAN DATA TERIKAT GROUPEDCHARTDATA) */}
+            {/* KOMPONEN GRAFIK (TIDAK PERLU DIUBAH SAMA SEKALI) */}
             <DashboardChart data={groupedChartData} />
           </div>
 
